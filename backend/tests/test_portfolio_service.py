@@ -207,8 +207,8 @@ def test_reset(conn, cache):
 
 
 def test_snapshot_retention(conn):
-    from app.schema import record_snapshot
     from app.schema import db as dbmod
+    from app.schema import record_snapshot
 
     dbmod.SNAPSHOT_RETENTION = 5
     try:
