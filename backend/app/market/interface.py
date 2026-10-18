@@ -54,9 +54,7 @@ class MarketDataSource(ABC):
         """Latest quote per ticker. Tickers that cannot be priced are omitted (never zero)."""
 
     @abstractmethod
-    async def get_eod_closes(
-        self, tickers: list[str], on: date | None = None
-    ) -> dict[str, float]:
+    async def get_eod_closes(self, tickers: list[str], on: date | None = None) -> dict[str, float]:
         """Closing price per ticker for `on` (default: most recent completed trading day)."""
 
     def max_quote_age(self) -> float | None:

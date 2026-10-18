@@ -18,7 +18,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from massive import RESTClient
-from massive.exceptions import AuthError, BadResponse
+from massive.exceptions import AuthError
 from massive.rest.models import SnapshotMarketType
 
 from .cache import PriceCache
@@ -175,9 +175,7 @@ class MassiveDataSource(MarketDataSource):
                 self._mode = Mode.EOD
         return await self._eod_quotes(tickers)
 
-    async def get_eod_closes(
-        self, tickers: list[str], on: date | None = None
-    ) -> dict[str, float]:
+    async def get_eod_closes(self, tickers: list[str], on: date | None = None) -> dict[str, float]:
         wanted = {t.upper().strip() for t in tickers}
         if self._client is None or not wanted:
             return {}
@@ -217,8 +215,11 @@ class MassiveDataSource(MarketDataSource):
             else:
                 for ticker, quote in self._quotes_from_snapshots(snaps).items():
                     self._cache.update(
-                        ticker, quote.price, as_of=quote.as_of,
-                        prev_close=quote.prev_close, source=self.kind,
+                        ticker,
+                        quote.price,
+                        as_of=quote.as_of,
+                        prev_close=quote.prev_close,
+                        source=self.kind,
                     )
                 self.status = SourceStatus.OK
                 return
@@ -237,8 +238,11 @@ class MassiveDataSource(MarketDataSource):
             return
         for ticker, quote in quotes.items():
             self._cache.update(
-                ticker, quote.price, as_of=quote.as_of,
-                prev_close=quote.prev_close, source=SourceKind.MASSIVE_EOD,
+                ticker,
+                quote.price,
+                as_of=quote.as_of,
+                prev_close=quote.prev_close,
+                source=SourceKind.MASSIVE_EOD,
             )
         self._eod_date = today
         self.status = SourceStatus.OK
@@ -268,16 +272,21 @@ class MassiveDataSource(MarketDataSource):
             if not (isinstance(prev_close, (int, float)) and prev_close > 0):
                 prev_close = None
             out[ticker] = Quote(
-                ticker, round(price, 2), round(price, 2),
+                ticker,
+                round(price, 2),
+                round(price, 2),
                 round(prev_close, 2) if prev_close else None,
-                as_of or now, now, self.kind,
+                as_of or now,
+                now,
+                self.kind,
             )
         return out
 
     def _grouped_closes(self, on: date, wanted: set[str]) -> dict[str, float]:
         bars = self._client.get_grouped_daily_aggs(on, adjusted=True)  # type: ignore[union-attr]
         return {
-            b.ticker: b.close for b in bars
+            b.ticker: b.close
+            for b in bars
             if b.ticker in wanted and isinstance(b.close, (int, float)) and b.close > 0
         }
 
@@ -301,13 +310,18 @@ class MassiveDataSource(MarketDataSource):
         day, closes = await asyncio.to_thread(self._latest_closes, wanted, today)
         if day is None:
             return {}
-        prev_day, prev_closes = await asyncio.to_thread(
-            self._latest_closes, wanted, day
-        )
+        prev_day, prev_closes = await asyncio.to_thread(self._latest_closes, wanted, day)
         now = self._clock()
         as_of = datetime(day.year, day.month, day.day, 21, 0).timestamp()
         return {
-            t: Quote(t, round(c, 2), round(c, 2), round(prev_closes[t], 2) if t in prev_closes else None,
-                     as_of, now, SourceKind.MASSIVE_EOD)
+            t: Quote(
+                t,
+                round(c, 2),
+                round(c, 2),
+                round(prev_closes[t], 2) if t in prev_closes else None,
+                as_of,
+                now,
+                SourceKind.MASSIVE_EOD,
+            )
             for t, c in closes.items()
         }

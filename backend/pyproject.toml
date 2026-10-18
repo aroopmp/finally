@@ -10,6 +10,9 @@ dependencies = [
     "numpy>=2.0.0",
     "massive>=1.0.0",
     "rich>=13.0.0",
+    "litellm>=1.105.1",
+    "pydantic>=2.12.5",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +44,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = ["E501"]  # Line too long (handled by formatter)
+ignore = ["E501", "N818"]  # E501: handled by formatter; N818: exception names fixed by the interface docs
 
 [tool.coverage.run]
 source = ["app"]

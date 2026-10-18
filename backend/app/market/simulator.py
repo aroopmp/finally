@@ -286,15 +286,20 @@ class SimulatorDataSource(MarketDataSource):
             quote = self._cache.get(ticker)
             if quote is None and self.supports(ticker):
                 now = self._clock()
-                quote = Quote(ticker, SEED_PRICES[ticker], SEED_PRICES[ticker],
-                              SEED_PRICES[ticker], now, now, self.kind)
+                quote = Quote(
+                    ticker,
+                    SEED_PRICES[ticker],
+                    SEED_PRICES[ticker],
+                    SEED_PRICES[ticker],
+                    now,
+                    now,
+                    self.kind,
+                )
             if quote is not None:
                 out[ticker] = quote
         return out
 
-    async def get_eod_closes(
-        self, tickers: list[str], on: date | None = None
-    ) -> dict[str, float]:
+    async def get_eod_closes(self, tickers: list[str], on: date | None = None) -> dict[str, float]:
         """The simulator has no history: returns the session baseline (seed) price."""
         return {t: SEED_PRICES[t] for t in tickers if self.supports(t)}
 

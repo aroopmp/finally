@@ -8,8 +8,8 @@ from massive.rest.models import GroupedDailyAgg, TickerSnapshot
 
 from app.market.cache import PriceCache
 from app.market.massive_client import (
-    Mode,
     MassiveDataSource,
+    Mode,
     NotAuthorized,
     classify_error,
     pick_price,
@@ -38,8 +38,9 @@ def bar(ticker, close):
 
 def make_source(client=None, plan="delayed", now=1_700_100_000.0):
     cache = PriceCache()
-    src = MassiveDataSource("key", cache, poll_interval=60, plan=plan,
-                            client=client or MagicMock(), clock=lambda: now)
+    src = MassiveDataSource(
+        "key", cache, poll_interval=60, plan=plan, client=client or MagicMock(), clock=lambda: now
+    )
     return src, cache
 
 
@@ -68,7 +69,9 @@ class TestLiveMode:
         src, cache = make_source()
         src._tickers = ["AAPL", "MSFT"]
         src._client.get_snapshot_all.return_value = [
-            snap("AAPL", 190.5, prev=189.0), snap("MSFT", 420.0, prev=None)]
+            snap("AAPL", 190.5, prev=189.0),
+            snap("MSFT", 420.0, prev=None),
+        ]
         await src._poll_once()
         aapl = cache.get("AAPL")
         assert aapl.price == 190.5 and aapl.prev_close == 189.0
@@ -88,7 +91,9 @@ class TestLiveMode:
         src, cache = make_source()
         src._tickers = ["AAPL", "BAD"]
         src._client.get_snapshot_all.return_value = [
-            snap("AAPL"), snap("BAD", trade=None, prev=None)]
+            snap("AAPL"),
+            snap("BAD", trade=None, prev=None),
+        ]
         await src._poll_once()
         assert "AAPL" in cache and "BAD" not in cache
 
@@ -150,8 +155,10 @@ class TestEodMode:
         src._client.get_snapshot_all.side_effect = self.NOT_ENTITLED
 
         def grouped(day, adjusted=True):
-            return {14: [bar("AAPL", 190.0), bar("MSFT", 420.0), bar("ZZ", 1.0)],
-                    13: [bar("AAPL", 188.0)]}.get(day.day, [])
+            return {
+                14: [bar("AAPL", 190.0), bar("MSFT", 420.0), bar("ZZ", 1.0)],
+                13: [bar("AAPL", 188.0)],
+            }.get(day.day, [])
 
         src._client.get_grouped_daily_aggs.side_effect = grouped
         await src._poll_once()
