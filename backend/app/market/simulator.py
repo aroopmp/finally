@@ -5,12 +5,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import os
 import random
+import time
+from collections.abc import Callable
+from datetime import date
 
 import numpy as np
 
 from .cache import PriceCache
 from .interface import MarketDataSource
+from .models import Quote, QuoteUnavailable, SourceKind, SourceStatus, UnknownTicker
 from .seed_prices import (
     CORRELATION_GROUPS,
     CROSS_GROUP_CORR,
@@ -201,31 +206,46 @@ class SimulatorDataSource(MarketDataSource):
     """MarketDataSource backed by the GBM simulator.
 
     Runs a background asyncio task that calls GBMSimulator.step() every
-    `update_interval` seconds and writes results to the PriceCache.
+    `update_interval` seconds and writes results to the PriceCache. The first
+    price seen for a ticker is its `prev_close` baseline ("change since start").
+
+    Only tickers with a seed price are supported; others raise UnknownTicker.
     """
+
+    kind = SourceKind.SIMULATOR
 
     def __init__(
         self,
         price_cache: PriceCache,
         update_interval: float = 0.5,
         event_probability: float = 0.001,
+        seed: int | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._cache = price_cache
         self._interval = update_interval
         self._event_prob = event_probability
+        self._seed = seed if seed is not None else _env_seed()
+        self._clock = clock
         self._sim: GBMSimulator | None = None
         self._task: asyncio.Task | None = None
+        self.status = SourceStatus.STARTING
+
+    @staticmethod
+    def supports(ticker: str) -> bool:
+        return ticker in SEED_PRICES
 
     async def start(self, tickers: list[str]) -> None:
-        self._sim = GBMSimulator(
-            tickers=tickers,
-            event_probability=self._event_prob,
-        )
-        # Seed the cache with initial prices so SSE has data immediately
+        if self._seed is not None:
+            np.random.seed(self._seed)
+            random.seed(self._seed)
+        tickers = [t for t in tickers if self.supports(t)]
+        # dt scales with the tick interval so annual volatility stays right
+        dt = self._interval / GBMSimulator.TRADING_SECONDS_PER_YEAR
+        self._sim = GBMSimulator(tickers=tickers, dt=dt, event_probability=self._event_prob)
         for ticker in tickers:
-            price = self._sim.get_price(ticker)
-            if price is not None:
-                self._cache.update(ticker=ticker, price=price)
+            self._seed_cache(ticker)
+        self.status = SourceStatus.OK
         self._task = asyncio.create_task(self._run_loop(), name="simulator-loop")
         logger.info("Simulator started with %d tickers", len(tickers))
 
@@ -240,13 +260,15 @@ class SimulatorDataSource(MarketDataSource):
         logger.info("Simulator stopped")
 
     async def add_ticker(self, ticker: str) -> None:
-        if self._sim:
-            self._sim.add_ticker(ticker)
-            # Seed cache immediately so the ticker has a price right away
-            price = self._sim.get_price(ticker)
-            if price is not None:
-                self._cache.update(ticker=ticker, price=price)
-            logger.info("Simulator: added ticker %s", ticker)
+        if not self.supports(ticker):
+            raise UnknownTicker(f"{ticker} is not a supported ticker")
+        if self._sim is None:
+            raise QuoteUnavailable("simulator not started")
+        if ticker in self._sim.get_tickers():
+            return
+        self._sim.add_ticker(ticker)
+        self._seed_cache(ticker)
+        logger.info("Simulator: added ticker %s", ticker)
 
     async def remove_ticker(self, ticker: str) -> None:
         if self._sim:
@@ -257,14 +279,45 @@ class SimulatorDataSource(MarketDataSource):
     def get_tickers(self) -> list[str]:
         return self._sim.get_tickers() if self._sim else []
 
+    async def get_quotes(self, tickers: list[str]) -> dict[str, Quote]:
+        """Current quotes. Untracked supported tickers get a static seed-price quote."""
+        out: dict[str, Quote] = {}
+        for ticker in tickers:
+            quote = self._cache.get(ticker)
+            if quote is None and self.supports(ticker):
+                now = self._clock()
+                quote = Quote(ticker, SEED_PRICES[ticker], SEED_PRICES[ticker],
+                              SEED_PRICES[ticker], now, now, self.kind)
+            if quote is not None:
+                out[ticker] = quote
+        return out
+
+    async def get_eod_closes(
+        self, tickers: list[str], on: date | None = None
+    ) -> dict[str, float]:
+        """The simulator has no history: returns the session baseline (seed) price."""
+        return {t: SEED_PRICES[t] for t in tickers if self.supports(t)}
+
+    def _seed_cache(self, ticker: str) -> None:
+        assert self._sim is not None
+        price = self._sim.get_price(ticker)
+        if price is not None:
+            self._cache.update(
+                ticker, price, as_of=self._clock(), prev_close=SEED_PRICES[ticker], source=self.kind
+            )
+
     async def _run_loop(self) -> None:
         """Core loop: step the simulation, write to cache, sleep."""
         while True:
             try:
                 if self._sim:
-                    prices = self._sim.step()
-                    for ticker, price in prices.items():
-                        self._cache.update(ticker=ticker, price=price)
+                    for ticker, price in self._sim.step().items():
+                        self._cache.update(ticker, price, as_of=self._clock(), source=self.kind)
             except Exception:
                 logger.exception("Simulator step failed")
             await asyncio.sleep(self._interval)
+
+
+def _env_seed() -> int | None:
+    raw = os.environ.get("SIM_SEED", "").strip()
+    return int(raw) if raw.lstrip("-").isdigit() else None

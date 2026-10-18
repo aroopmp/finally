@@ -12,6 +12,33 @@ SEED_PRICES: dict[str, float] = {
     "JPM": 195.00,
     "V": 280.00,
     "NFLX": 600.00,
+    # Wider supported universe (can be added to the watchlist / traded)
+    "PYPL": 65.00,
+    "AMD": 160.00,
+    "INTC": 30.00,
+    "ADBE": 500.00,
+    "CRM": 270.00,
+    "ORCL": 125.00,
+    "QCOM": 170.00,
+    "UBER": 75.00,
+    "DIS": 100.00,
+    "BA": 180.00,
+    "KO": 62.00,
+    "PEP": 170.00,
+    "WMT": 68.00,
+    "COST": 780.00,
+    "NKE": 95.00,
+    "SBUX": 90.00,
+    "HD": 360.00,
+    "XOM": 115.00,
+    "CVX": 155.00,
+    "JNJ": 155.00,
+    "PFE": 28.00,
+    "UNH": 520.00,
+    "BAC": 38.00,
+    "WFC": 58.00,
+    "GS": 450.00,
+    "MA": 460.00,
 }
 
 # Per-ticker GBM parameters
@@ -36,8 +63,9 @@ DEFAULT_PARAMS: dict[str, float] = {"sigma": 0.25, "mu": 0.05}
 # Correlation groups for the simulator's Cholesky decomposition
 # Tickers in the same group have higher intra-group correlation
 CORRELATION_GROUPS: dict[str, set[str]] = {
-    "tech": {"AAPL", "GOOGL", "MSFT", "AMZN", "META", "NVDA", "NFLX"},
-    "finance": {"JPM", "V"},
+    "tech": {"AAPL", "GOOGL", "MSFT", "AMZN", "META", "NVDA", "NFLX", "AMD", "INTC",
+             "ADBE", "CRM", "ORCL", "QCOM", "PYPL", "UBER"},
+    "finance": {"JPM", "V", "BAC", "WFC", "GS", "MA"},
 }
 
 # Correlation coefficients

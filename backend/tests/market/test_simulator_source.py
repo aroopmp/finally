@@ -136,3 +136,64 @@ class TestSimulatorDataSource:
         # Just verify it starts and stops cleanly
         await asyncio.sleep(0.2)
         await source.stop()
+
+
+@pytest.mark.asyncio
+class TestSimulatorContract:
+    async def test_prev_close_is_seed_and_survives_ticks(self):
+        from app.market.seed_prices import SEED_PRICES
+
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.01)
+        await source.start(["AAPL"])
+        await asyncio.sleep(0.1)
+        quote = cache.get("AAPL")
+        assert quote.prev_close == SEED_PRICES["AAPL"]
+        assert quote.source.value == "simulator"
+        await source.stop()
+
+    async def test_unknown_ticker_rejected(self):
+        from app.market.models import UnknownTicker
+
+        source = SimulatorDataSource(price_cache=PriceCache(), update_interval=0.1)
+        await source.start(["AAPL"])
+        with pytest.raises(UnknownTicker):
+            await source.add_ticker("ZZZZ")
+        await source.stop()
+
+    async def test_wider_universe_supported(self):
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
+        await source.start(["AAPL"])
+        await source.add_ticker("PYPL")
+        assert cache.get("PYPL") is not None
+        await source.stop()
+
+    async def test_get_quotes_omits_unknown_and_covers_untracked(self):
+        source = SimulatorDataSource(price_cache=PriceCache(), update_interval=0.1)
+        await source.start(["AAPL"])
+        quotes = await source.get_quotes(["AAPL", "AMD", "ZZZZ"])
+        assert set(quotes) == {"AAPL", "AMD"}
+        await source.stop()
+
+    async def test_eod_closes_is_baseline(self):
+        source = SimulatorDataSource(price_cache=PriceCache())
+        assert await source.get_eod_closes(["AAPL", "ZZZZ"]) == {"AAPL": 190.0}
+
+    async def test_seeded_runs_are_deterministic(self):
+        async def run():
+            cache = PriceCache()
+            source = SimulatorDataSource(price_cache=cache, seed=7, event_probability=0)
+            await source.start(["AAPL", "MSFT"])
+            prices = [source._sim.step() for _ in range(20)]
+            await source.stop()
+            return prices
+
+        assert await run() == await run()
+
+    async def test_kind_and_status(self):
+        source = SimulatorDataSource(price_cache=PriceCache(), update_interval=0.1)
+        assert source.status.value == "starting"
+        await source.start(["AAPL"])
+        assert source.status.value == "ok" and source.kind.value == "simulator"
+        await source.stop()

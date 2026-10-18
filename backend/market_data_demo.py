@@ -91,7 +91,7 @@ def build_table(
 
         price_str = f"[{color}]${format_price(update.price)}[/]"
         change_str = f"[{color}]{update.change:+.2f}[/]"
-        pct_str = f"[{color}]{update.change_percent:+.2f}%[/]"
+        pct_str = f"[{color}]{(update.day_change_pct or 0.0):+.2f}%[/]"
 
         # Sparkline from history
         vals = list(history.get(ticker, []))
@@ -247,14 +247,14 @@ async def run() -> None:
                     history[ticker].append(update.price)
 
                     # Log notable moves
-                    if abs(update.change_percent) > 1.0:
+                    if abs((update.day_change_pct or 0.0)) > 1.0:
                         direction = "\u25b2" if update.direction == "up" else "\u25bc"
                         color = "green" if update.direction == "up" else "red"
                         timestamp = time.strftime("%H:%M:%S")
                         events.appendleft(
                             f"[bright_black]{timestamp}[/]  "
                             f"[bold {color}]{direction} {ticker}[/]  "
-                            f"[{color}]{update.change_percent:+.2f}%[/]  "
+                            f"[{color}]{(update.day_change_pct or 0.0):+.2f}%[/]  "
                             f"${format_price(update.price)}"
                         )
 
