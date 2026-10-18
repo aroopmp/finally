@@ -4,5 +4,9 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   workers: 1,
-  use: { baseURL: process.env.BASE_URL ?? 'http://localhost:8000' },
+  use: {
+    baseURL: process.env.BASE_URL ?? 'http://localhost:8000',
+    // Optional: point at a preinstalled Chromium when the matching browser build isn't downloaded.
+    launchOptions: process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {},
+  },
 });
