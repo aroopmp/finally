@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html, body { background: #0d1117; color: #e6edf3; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 13px; }
+
+/* Price flash: instant highlight on change, then a ~500ms CSS fade back to transparent. */
+.price-cell { transition: background-color 500ms ease-out; border-radius: 3px; padding: 0 4px; }
+.price-cell.flash-up { background-color: rgba(63, 185, 80, 0.35); transition: none; }
+.price-cell.flash-down { background-color: rgba(248, 81, 73, 0.35); transition: none; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.panel { background: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+.panel-title { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8b949e; }
+.num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }

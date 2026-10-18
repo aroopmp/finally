@@ -60,3 +60,16 @@ finally/
 ## License
 
 See [LICENSE](LICENSE).
+
+## Run the demo
+
+**Docker:** `cp .env.example .env` (set `OPENROUTER_API_KEY`, or `LLM_MOCK=true`), then `scripts/start_mac.sh --open`. Stop with `scripts/stop_mac.sh`. Data persists in the `finally-data` volume.
+
+**Without Docker:**
+```bash
+cd frontend && npm ci && npm run build        # static export -> frontend/out
+cd ../backend && STATIC_DIR=../frontend/out uv run uvicorn app.main:create_default_app --factory --port 8000
+```
+Then open http://localhost:8000.
+
+**Tests:** `cd backend && uv run pytest` · `cd frontend && npm test` · E2E: `cd test && npm i && npx playwright install chromium && npx playwright test` (app running with `LLM_MOCK=true`).
