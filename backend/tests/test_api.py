@@ -245,3 +245,65 @@ def test_snapshot_skipped_when_price_missing(client):
     pf = portfolio(client)
     assert pf["prices_complete"] is False and pf["positions"][0]["price"] is None
     assert pf["positions"][0]["market_value"] == 100.0  # falls back to cost basis, not zero
+
+
+class TestPriceEligibility:
+    def test_holding_without_price_is_valued_at_cost_never_zero(self, client):
+        buy(client, "AAPL", 10)
+        client.app_state.cache.remove("AAPL")
+        p = client.get("/api/portfolio").json()
+        pos = p["positions"][0]
+        assert pos["price"] is None and pos["stale"] is True
+        assert pos["market_value"] == 1000.0 and pos["unrealized_pnl"] is None
+        assert p["total_value"] == 10000.0 and p["prices_complete"] is False
+
+    def test_incomplete_prices_never_persist_a_snapshot(self, client):
+        buy(client, "AAPL", 10)
+        before = len(client.get("/api/portfolio/history").json()["snapshots"])
+        client.app_state.cache.remove("AAPL")
+        assert portfolio_record(client) is False
+        assert len(client.get("/api/portfolio/history").json()["snapshots"]) == before
+
+    def test_sell_without_current_quote_is_refused_not_filled_at_zero(self, client, source):
+        buy(client, "PYPL", 2)
+        client.app_state.cache.remove("PYPL")
+        source.refresh_on_add = False
+        r = buy(client, "PYPL", 2, side="sell")
+        assert r.status_code == 503
+        assert client.get("/api/portfolio").json()["positions"][0]["quantity"] == 2
+
+
+def portfolio_record(client) -> bool:
+    from app.services import portfolio
+
+    return portfolio.record_snapshot(client.app_state)
+
+
+def test_sse_payload_contract(client):
+    """Documented in API.md: a full snapshot keyed by ticker, Unix-second float timestamps."""
+    from app.market.stream import _generate_events
+
+    class Req:
+        client = None
+
+        async def is_disconnected(self):
+            return False
+
+    async def first_data():
+        gen = _generate_events(client.app_state.cache, Req(), interval=0.01)
+        async for chunk in gen:
+            if chunk.startswith("data:"):
+                await gen.aclose()
+                return json.loads(chunk[5:])
+
+    import asyncio
+    import json
+
+    data = asyncio.run(first_data())
+    assert set(data) >= {"AAPL", "MSFT"}
+    q = data["AAPL"]
+    assert set(q) == {
+        "ticker", "price", "prev_price", "prev_close", "change", "direction",
+        "day_change", "day_change_pct", "as_of", "source",
+    }  # fmt: skip
+    assert q["ticker"] == "AAPL" and isinstance(q["as_of"], float) and q["as_of"] < 1e11

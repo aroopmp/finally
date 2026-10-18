@@ -150,3 +150,93 @@ def test_response_arriving_after_reset_is_discarded(client, real_llm, monkeypatc
     assert r.status_code == 409 and r.json()["error"]["code"] == "account_reset"
     assert client.get("/api/portfolio").json()["positions"] == []
     assert client.get("/api/chat/history").json()["messages"] == []
+
+
+def _fake_llm(monkeypatch, response):
+    monkeypatch.setattr(chat_module, "call_llm", lambda messages: response)
+
+
+def test_actions_run_in_order_and_failure_does_not_stop_later(client, real_llm, monkeypatch):
+    trade = chat_module.ChatTrade
+    _fake_llm(
+        monkeypatch,
+        chat_module.LLMResponse(
+            message="go",
+            trades=[
+                trade(ticker="AAPL", side="buy", quantity=1),
+                trade(ticker="MSFT", side="buy", quantity=1000),  # insufficient cash
+                trade(ticker="zzzz", side="buy", quantity=1),  # unknown ticker
+                trade(ticker="googl", side="buy", quantity=2),
+            ],
+            watchlist_changes=[chat_module.WatchlistChange(ticker="PYPL", action="add")],
+        ),
+    )
+    actions = say(client, "do it").json()["actions"]
+    assert [a["ticker"] for a in actions] == ["AAPL", "MSFT", "ZZZZ", "GOOGL", "PYPL"]
+    assert [a["status"] for a in actions] == ["ok", "error", "error", "ok", "ok"]
+    assert actions[1]["error"]["code"] == "insufficient_cash"
+    assert actions[2]["error"]["code"] == "unknown_ticker"
+    assert client.get("/api/portfolio").json()["cash_balance"] == 10000.0 - 100.0 - 350.0
+
+
+def test_sell_before_buy_ordering_matters(client, real_llm, monkeypatch):
+    trade = chat_module.ChatTrade
+    _fake_llm(
+        monkeypatch,
+        chat_module.LLMResponse(
+            message="x",
+            trades=[
+                trade(ticker="AAPL", side="sell", quantity=1),
+                trade(ticker="AAPL", side="buy", quantity=1),
+            ],
+            watchlist_changes=[],
+        ),
+    )
+    actions = say(client, "x").json()["actions"]
+    assert [a["status"] for a in actions] == ["error", "ok"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "{not json",
+        "",
+        "[]",
+        '{"trades": []}',
+        '{"message": "x", "trades": [{"ticker": "A"}]}',
+        '{"message": "x", "trades": [{"ticker": "AAPL", "side": "hold", "quantity": 1}]}',
+    ],
+)
+def test_malformed_json_rejected(raw):
+    with pytest.raises(ValueError):
+        chat_module.LLMResponseLenient.model_validate_json(raw)
+
+
+def test_missing_arrays_default_to_empty():
+    r = chat_module.LLMResponseLenient.model_validate_json('{"message": "hi"}')
+    assert r.trades == [] and r.watchlist_changes == []
+
+
+def test_malformed_output_stores_nothing(client, real_llm, monkeypatch):
+    def bad(messages):
+        chat_module.LLMResponseLenient.model_validate_json('{"message": 5')
+
+    monkeypatch.setattr(chat_module, "call_llm", bad)
+    r = say(client, "buy 1 AAPL")
+    assert r.status_code == 502 and r.json()["error"]["code"] == "llm_error"
+    assert client.get("/api/chat/history").json()["messages"] == []
+    assert client.get("/api/portfolio").json()["positions"] == []
+
+
+def test_mock_edge_cases():
+    assert mock_response("buy 0.5 nvda").trades[0].quantity == 0.5
+    assert mock_response("  Add  pypl ").watchlist_changes[0].ticker == "PYPL"
+    for text in ("buy AAPL", "buy 10", "buy 10 TOOLONGX", "please buy 10 AAPL", ""):
+        assert mock_response(text).message == chat_module.CANNED_REPLY
+
+
+def test_system_prompt_per_spec():
+    p = chat_module.SYSTEM_PROMPT
+    assert "FinAlly" in p and "JSON" in p and "watchlist" in p
+    schema = chat_module.LLMResponse.model_json_schema()
+    assert set(schema["required"]) == {"message", "trades", "watchlist_changes"}
